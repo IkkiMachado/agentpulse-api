@@ -22,6 +22,57 @@ Plataforma de alta performance para **Orquestração e Observabilidade de Agente
 
 ---
 
+## 🎬 Fluxo de Execução & Demonstração Visual
+
+<!-- Coloque sua gravação em agentpulse-api/docs/agentpulse-demo.gif -->
+<p align="center">
+  <img src="docs/agentpulse-demo.gif" alt="AgentPulse API Flow - Asynchronous Request-Reply & ReAct Tracing" width="100%" />
+</p>
+
+### 🔄 Diagrama de Sequência (Asynchronous Request-Reply + ReAct)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Cliente / Frontend
+    participant API as FastAPI Router
+    participant Worker as Background Worker (ReAct)
+    participant LLM as Google Gemini API
+    participant Tools as Tool Registry
+    participant DB as SQLite / PostgreSQL
+
+    User->>API: POST /api/v1/agents/{id}/tasks (Prompt da Missão)
+    API->>DB: Cria Task (status=PENDING)
+    API-->>User: HTTP 202 Accepted { "task_id": "uuid", "status": "PENDING" }
+    
+    API-)Worker: Despacha execução assíncrona (run_agent_task)
+    Worker->>DB: Atualiza Task (status=RUNNING)
+    
+    loop Polling de Status (a cada 600ms)
+        User->>API: GET /api/v1/tasks/{task_id}
+        API-->>User: HTTP 200 { "status": "RUNNING" }
+    end
+
+    Note over Worker,LLM: Ciclo ReAct & Tool Execution
+    Worker->>DB: Grava Trace [THOUGHT] (Raciocínio interno)
+    Worker->>LLM: generate_content(prompt, tools)
+    LLM-->>Worker: Tool Call (search_knowledge_base)
+    Worker->>DB: Grava Trace [TOOL_CALL]
+    Worker->>Tools: Executa search_knowledge_base(query)
+    Tools-->>Worker: Resultado dos dados
+    Worker->>DB: Grava Trace [TOOL_RESULT]
+    Worker->>DB: Grava Trace [FINAL_ANSWER]
+
+    Worker->>DB: Atualiza Task (status=COMPLETED, tokens, cost_usd, duration_ms)
+
+    User->>API: GET /api/v1/tasks/{task_id}
+    API-->>User: HTTP 200 { "status": "COMPLETED", "output_result": "...", "estimated_cost_usd": 0.000075 }
+    User->>API: GET /api/v1/tasks/{task_id}/traces
+    API-->>User: HTTP 200 [ Lista cronológica dos passos ReAct ]
+```
+
+---
+
 ## 🏗️ Estrutura do Projeto
 
 ```
